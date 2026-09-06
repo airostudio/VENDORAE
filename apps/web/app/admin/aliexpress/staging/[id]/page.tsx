@@ -476,7 +476,7 @@ export default function StagedProductEditor({ params }: { params: { id: string }
               type="text"
               value={product.brand ?? ""}
               onChange={(e) => update({ brand: e.target.value || null })}
-              placeholder="Beach Footprints"
+              placeholder="Your Store"
               className="w-full border border-stone-300 px-3 py-2 text-sm"
             />
           </div>

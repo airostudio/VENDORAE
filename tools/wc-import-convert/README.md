@@ -1,4 +1,4 @@
-# WooCommerce product-export → Beach Footprints importer CSV
+# WooCommerce product-export → Vendorae importer CSV
 
 Converts a WooCommerce product-export `.xlsx` into the CSV format
 `apps/web/lib/import/product-import.ts` — and therefore

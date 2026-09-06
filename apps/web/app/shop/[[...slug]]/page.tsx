@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import ShopGrid from "@/components/ShopGrid";
 import { getCategoryByHandle } from "@/lib/data/categories";
 import { getAllProducts, getProductsByCategory } from "@/lib/data/products";
+import { getTenantBranding } from "@/lib/tenantSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -14,15 +15,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const handle = params.slug?.join("/");
   const category = handle ? await getCategoryByHandle(handle) : undefined;
   const title = category ? category.name : "Shop All";
-  return { title, description: category?.description ?? "Browse the full Beach Footprints catalogue." };
+  const { brandName } = await getTenantBranding();
+  return { title, description: category?.description ?? `Browse the full ${brandName} catalogue.` };
 }
 
 export default async function ShopPage({ params }: Props) {
   const handle = params.slug?.join("/");
 
   if (!handle) {
-    const products = await getAllProducts();
-    return <ShopGrid products={products} title="Shop All" description="Every product across the Beach Footprints catalogue." />;
+    const [products, { brandName }] = await Promise.all([getAllProducts(), getTenantBranding()]);
+    return <ShopGrid products={products} title="Shop All" description={`Every product across the ${brandName} catalogue.`} />;
   }
 
   const category = await getCategoryByHandle(handle);

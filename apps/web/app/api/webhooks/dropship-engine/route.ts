@@ -42,7 +42,7 @@ async function logEvent(supabase: Db, params: { event: string; variantId?: strin
 
 /**
  * Receives product/order events from the dropship-engine (see its README's
- * webhook list) and applies them to Beach Footprints' own products/orders —
+ * webhook list) and applies them to this store's own products/orders —
  * the mirror image of the admin routes that call *into* the engine. Every
  * payload is scoped to this store's own ids (externalProductId/
  * externalVariantId/externalOrderId), never the engine's internal ids.
@@ -130,7 +130,7 @@ async function notifyCustomerShipped(
   await getEmailProvider().sendTransactionalEmail({
     to: customerEmail,
     templateKey: "order-shipped",
-    subject: "Your Beach Footprints order has shipped",
+    subject: "Your order has shipped",
     data: { orderId: event.externalOrderId, trackingNumber: event.trackingNumber, carrier: event.carrier, trackingUrl: event.trackingUrl },
   });
 }

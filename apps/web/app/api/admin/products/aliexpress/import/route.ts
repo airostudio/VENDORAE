@@ -29,7 +29,7 @@ function slugify(value: string): string {
  * Imports a single AliExpress product via the dropship-engine (see
  * /dropship-engine's README): the engine fetches the live listing, applies
  * this store's pricing rule and brand voice, and returns priced, on-brand
- * data. This route's only job is writing that into Beach Footprints' own
+ * data. This route's only job is writing that into this store's own
  * products/product_variants tables and registering the mapping back with
  * the engine — the engine never touches this database directly.
  */
@@ -39,6 +39,12 @@ export async function POST(request: Request) {
 
   const supabase = createServiceRoleSupabaseClient();
   const tenantId = await resolveTenantId(supabase, parsed.data.tenant);
+  const { data: tenantSettings } = await supabase
+    .from("tenant_settings")
+    .select("brand_name")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  const brandName = (tenantSettings?.brand_name as string | undefined) || null;
 
   try {
     const imported = await importProduct({ aliexpressProductId: parsed.data.productId });
@@ -73,7 +79,7 @@ export async function POST(request: Request) {
           short_description: imported.description.split("\n\n")[0]?.split("\n").slice(1).join(" ").slice(0, 300),
           description: imported.description,
           status: parsed.data.publish ? "PUBLISHED" : "DRAFT",
-          brand: "Beach Footprints",
+          brand: brandName,
           shipping_class: "STANDARD",
           stock_policy: "IN_STOCK",
         })

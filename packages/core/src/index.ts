@@ -5,6 +5,7 @@ export * from "./providers/email";
 export * from "./providers/ai";
 export * from "./providers/adapters/mock-payment";
 export * from "./providers/adapters/stripe-payment";
+export * from "./providers/adapters/paypal-payment";
 export * from "./providers/adapters/flat-rate-shipping";
 export * from "./providers/adapters/console-email";
 export * from "./providers/adapters/resend-email";

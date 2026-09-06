@@ -215,8 +215,8 @@ function CheckoutFlow() {
             )}
 
             <p className="text-xs text-stone-500 mt-4">
-              You&rsquo;ll be taken to Stripe&rsquo;s secure payment page to enter your card details. Beach Footprints
-              never sees or stores your card number.
+              You&rsquo;ll be taken to Stripe&rsquo;s secure payment page to enter your card details. We never see or
+              store your card number.
             </p>
           </div>
         )}

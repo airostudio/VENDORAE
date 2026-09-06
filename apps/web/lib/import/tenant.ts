@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || "beach-footprints-demo";
+const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || "default-store";
 
 /** Resolve a tenant id, defaulting to the single demo tenant until admin auth picks the active tenant from a session. */
 export async function resolveTenantId(supabase: SupabaseClient, tenantIdOrSlug?: string): Promise<string> {

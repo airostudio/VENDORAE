@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Proxies the one-time AliExpress OAuth bootstrap to the dropship-engine
- * (see the engine's README) — Beach Footprints' own admin password gates
+ * (see the engine's README) — This store's own admin password gates
  * this route, and DROPSHIP_ENGINE_API_KEY (never any AliExpress credentials)
  * is the only secret this app holds for it. The engine has its own platform
  * AliExpress app, so normally nothing needs registering here — GET without

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * the same work the dropship-engine's scheduled every-5-hours job does, for
  * on-demand/admin-triggered use. The engine applies the actual updates by
  * calling back into POST /api/webhooks/dropship-engine (order.shipped /
- * order.delivered) before this request returns, so Beach Footprints' own
+ * order.delivered) before this request returns, so this store's own
  * `orders` rows are already current by the time this responds.
  */
 export async function POST() {
