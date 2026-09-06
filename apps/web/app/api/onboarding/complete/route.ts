@@ -10,6 +10,11 @@ const bodySchema = z.object({
   businessName: z.string().trim().min(1, "Business name is required").max(200),
   businessDescription: z.string().trim().max(2000).optional(),
   productNiche: z.string().trim().max(500).optional(),
+  // The store owner's login — a new tenant gets a real admin account from day one, no
+  // shared-password break-glass bootstrap needed (see apps/web/middleware.ts and
+  // /admin/create-account, which exist only to bridge tenants that predate this).
+  ownerEmail: z.string().trim().email("Enter a valid email"),
+  ownerPassword: z.string().min(8, "Password must be at least 8 characters"),
   // Stripe/PayPal fields are all optional so an owner can finish the wizard and configure
   // payments later from /admin/payments — a store with no catalogue yet doesn't need working
   // checkout on day one, and the onboarding gate should not become a second point of failure.
@@ -22,9 +27,10 @@ const bodySchema = z.object({
 });
 
 /**
- * Saves everything collected by the setup wizard and marks onboarding complete, using the
- * service-role client — the new owner has no membership row (and therefore no RLS access) until
- * after this request, since memberships/auth are unrelated to this wizard.
+ * Saves everything collected by the setup wizard, creates the owner's login (Supabase Auth user +
+ * `memberships` row, role OWNER), and marks onboarding complete — using the service-role client,
+ * since the new owner has no membership row (and therefore no RLS access) until this request
+ * creates one.
  *
  * A blank credential field is left untouched (not cleared) so filling in the wizard across
  * multiple visits, or completing only some of it, never wipes out a value entered earlier.
@@ -53,6 +59,28 @@ export async function POST(request: Request) {
         { error: "Onboarding is already complete. Manage store settings from /admin/payments instead." },
         { status: 403 },
       );
+    }
+
+    // Create the owner's login before saving anything else — if this fails, nothing else about
+    // this tenant should be marked done either, since there'd be no way for anyone to sign in.
+    const { data: existingMemberships, error: membershipsError } = await supabase
+      .from("memberships")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .limit(1);
+    if (membershipsError) throw new Error(membershipsError.message);
+    if (!existingMemberships || existingMemberships.length === 0) {
+      const { data: created, error: createUserError } = await supabase.auth.admin.createUser({
+        email: input.ownerEmail,
+        password: input.ownerPassword,
+        email_confirm: true,
+      });
+      if (createUserError || !created?.user) throw new Error(createUserError?.message || "Could not create your admin account");
+
+      const { error: membershipError } = await supabase
+        .from("memberships")
+        .insert({ tenant_id: tenantId, user_id: created.user.id, role: "OWNER" });
+      if (membershipError) throw new Error(membershipError.message);
     }
 
     const update: Record<string, unknown> = {

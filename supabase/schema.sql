@@ -46,6 +46,10 @@ create table tenants (
   name           text not null,
   slug           text not null unique,
   primary_domain text unique,
+  -- Reserved for Phase 3 (custom domains as a paid upgrade over the default <slug>.<platform
+  -- root domain> subdomain — see apps/web/lib/tenant/host.ts). Not read or written by any Phase 1
+  -- code; no domain verification/SSL/Vercel Domains API wiring exists yet.
+  custom_domain  text unique,
   is_active      boolean not null default true,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()

@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Step = "welcome" | "business" | "logo" | "stripe" | "paypal" | "review";
+type Step = "welcome" | "business" | "account" | "logo" | "stripe" | "paypal" | "review";
 
-const STEPS: Step[] = ["welcome", "business", "logo", "stripe", "paypal", "review"];
+const STEPS: Step[] = ["welcome", "business", "account", "logo", "stripe", "paypal", "review"];
 const STEP_LABELS: Record<Step, string> = {
   welcome: "Welcome",
   business: "Business",
+  account: "Login",
   logo: "Logo",
   stripe: "Stripe",
   paypal: "PayPal",
@@ -50,6 +51,10 @@ export default function OnboardingPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
+
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerPassword, setOwnerPassword] = useState("");
+  const [ownerPasswordConfirm, setOwnerPasswordConfirm] = useState("");
 
   const [stripeSecretKey, setStripeSecretKey] = useState("");
   const [stripePublishableKey, setStripePublishableKey] = useState("");
@@ -117,6 +122,10 @@ export default function OnboardingPage() {
   }
 
   async function finish() {
+    if (!ownerEmail.trim() || ownerPassword.length < 8) {
+      setError("Go back and set up your admin login before finishing.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -127,6 +136,8 @@ export default function OnboardingPage() {
           businessName,
           businessDescription,
           productNiche,
+          ownerEmail,
+          ownerPassword,
           stripeSecretKey: stripeSecretKey || undefined,
           stripePublishableKey: stripePublishableKey || undefined,
           stripeWebhookSecret: stripeWebhookSecret || undefined,
@@ -150,6 +161,20 @@ export default function OnboardingPage() {
     if (step === "business" && !businessName.trim()) {
       setError("Enter a business name to continue.");
       return;
+    }
+    if (step === "account") {
+      if (!ownerEmail.trim() || !ownerPassword) {
+        setError("Enter an email and password for your admin login.");
+        return;
+      }
+      if (ownerPassword.length < 8) {
+        setError("Password must be at least 8 characters.");
+        return;
+      }
+      if (ownerPassword !== ownerPasswordConfirm) {
+        setError("Passwords don't match.");
+        return;
+      }
     }
     setError(null);
     setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
@@ -209,6 +234,44 @@ export default function OnboardingPage() {
                 value={productNiche}
                 onChange={(e) => setProductNiche(e.target.value)}
                 placeholder="Home fragrance and candles"
+              />
+            </Field>
+          </div>
+        )}
+
+        {step === "account" && (
+          <div>
+            <h2 className="font-serif text-xl mb-4">Your admin login</h2>
+            <p className="text-sm text-stone-600 mb-4">
+              This is how you&rsquo;ll sign in to manage your store at <span className="font-medium">/admin</span> from now
+              on.
+            </p>
+            <Field label="Email">
+              <input
+                className={inputClass}
+                type="email"
+                autoComplete="username"
+                value={ownerEmail}
+                onChange={(e) => setOwnerEmail(e.target.value)}
+                placeholder="you@yourstore.com"
+              />
+            </Field>
+            <Field label="Password" hint="At least 8 characters.">
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete="new-password"
+                value={ownerPassword}
+                onChange={(e) => setOwnerPassword(e.target.value)}
+              />
+            </Field>
+            <Field label="Confirm password">
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete="new-password"
+                value={ownerPasswordConfirm}
+                onChange={(e) => setOwnerPasswordConfirm(e.target.value)}
               />
             </Field>
           </div>
@@ -312,6 +375,10 @@ export default function OnboardingPage() {
               <div className="flex justify-between border-b border-stone-100 pb-2">
                 <dt className="text-stone-500">Product niche</dt>
                 <dd>{productNiche || "—"}</dd>
+              </div>
+              <div className="flex justify-between border-b border-stone-100 pb-2">
+                <dt className="text-stone-500">Admin login</dt>
+                <dd>{ownerEmail || "—"}</dd>
               </div>
               <div className="flex justify-between border-b border-stone-100 pb-2">
                 <dt className="text-stone-500">Logo</dt>
