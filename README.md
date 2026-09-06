@@ -198,6 +198,20 @@ PLATFORM_LICENSE_PRICE_ID=       # Stripe Price id (recurring) for the one subsc
                                   # unit_amount/currency are fetched live and rendered on /platform,
                                   # never hardcoded
 
+# Stripe Connect (Phase 3) — a tenant connects a real Stripe Express account from /admin/payments
+# (apps/web/lib/platform/connect.ts) and their checkout then charges customers directly into it,
+# with Vendorae's commission (tenant_licenses.commission_bps) deducted automatically via an
+# application fee. Uses the SAME PLATFORM_STRIPE_SECRET_KEY / PLATFORM_STRIPE_WEBHOOK_SECRET pair
+# above — no separate credentials needed.
+#
+# IMPORTANT: in the Stripe Dashboard, on the webhook endpoint pointed at
+# POST /api/webhooks/platform-stripe, you must enable "Listen to events on Connected accounts" —
+# without it, `account.updated` and a connected account's `checkout.session.completed` events
+# never reach this endpoint at all, so a tenant's Connect status will never update past
+# "onboarding incomplete" and their orders will never be marked paid. The same signing secret
+# verifies both the platform's own events and every connected account's events; the handler tells
+# them apart via the event's top-level `account` field (present only for Connect-sourced events).
+
 # Optional — enables the /onboarding wizard's "AI Generate" logo button
 # (apps/web/app/api/onboarding/logo/generate/route.ts). Without it, that
 # endpoint returns a clear error and the wizard's upload option still works.

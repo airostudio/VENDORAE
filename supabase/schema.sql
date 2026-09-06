@@ -178,6 +178,13 @@ create table tenant_licenses (
   -- incomplete_expired, trialing, unpaid) rather than inventing a separate one.
   status                    text not null,
   current_period_end        timestamptz,
+  -- The commission Vendorae takes on a Connect-charged order, in basis points (200 = 2%). A flat
+  -- placeholder until tiered plans (Starter/Business/Pro/Elite) exist and this becomes plan-driven
+  -- instead. IMPORTANT: this default only applies to rows inserted from here on — a tenant with NO
+  -- tenant_licenses row at all (every tenant provisioned before this column existed) must be
+  -- treated as 0 commission by application code, never as this default; see
+  -- apps/web/lib/platform/connect.ts's getConnectContextForCheckout.
+  commission_bps            integer not null default 200,
   created_at                timestamptz not null default now(),
   updated_at                timestamptz not null default now()
 );
@@ -259,6 +266,27 @@ $$;
 -- to the service role, which is the only caller (createServiceRoleSupabaseClient()).
 revoke execute on function public.provision_tenant(text, text, text, text, text, text, timestamptz) from public, anon, authenticated;
 grant execute on function public.provision_tenant(text, text, text, text, text, text, timestamptz) to service_role;
+
+-- ================================================================
+-- Stripe Connect (Phase 3) — one row per tenant tracking its connected Stripe
+-- Express account, the account that receives THEIR customers' checkout money
+-- directly (a Connect "direct charge"). Entirely separate from tenant_licenses
+-- above (the platform's own Stripe account charging a SaaS license fee).
+-- See apps/web/lib/platform/connect.ts.
+-- ================================================================
+
+create table tenant_stripe_accounts (
+  id                uuid primary key default gen_random_uuid(),
+  tenant_id         uuid not null unique references tenants(id) on delete cascade,
+  stripe_account_id text not null unique,
+  charges_enabled   boolean not null default false,
+  payouts_enabled   boolean not null default false,
+  details_submitted boolean not null default false,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+create trigger trg_tenant_stripe_accounts_updated_at before update on tenant_stripe_accounts
+  for each row execute function set_updated_at();
 
 -- ================================================================
 -- Customers
@@ -858,6 +886,7 @@ create table app_integrations (
 alter table tenants enable row level security;
 alter table tenant_settings enable row level security;
 alter table tenant_licenses enable row level security;
+alter table tenant_stripe_accounts enable row level security;
 alter table tax_settings enable row level security;
 alter table memberships enable row level security;
 alter table audit_logs enable row level security;
@@ -915,6 +944,12 @@ create policy "tenant members manage tax_settings" on tax_settings for all
 create policy "tenant members manage memberships" on memberships for all
   using (is_tenant_member(tenant_id)) with check (is_tenant_member(tenant_id));
 create policy "tenant members read audit_logs" on audit_logs for select
+  using (is_tenant_member(tenant_id));
+-- Unlike tenant_licenses (service-role only — Stripe customer/subscription ids), a Connect
+-- account id and its onboarding-status booleans aren't sensitive, so a tenant's own admin may
+-- read its own row directly. No insert/update/delete policy: writes only ever come from
+-- service-role code (the onboarding-link flow and the account.updated webhook).
+create policy "tenant members view own connect account" on tenant_stripe_accounts for select
   using (is_tenant_member(tenant_id));
 
 -- Storefront catalogue: public read of published rows, tenant members manage all

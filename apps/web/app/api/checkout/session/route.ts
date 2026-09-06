@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type Stripe from "stripe";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
 import { resolveCart } from "@/lib/checkout/pricing";
 import { siteUrl, stripe } from "@/lib/checkout/stripe";
 import { checkRateLimit, clientIp } from "@/lib/rateLimit";
+import { platformStripe } from "@/lib/platform/stripe";
+import { getConnectContextForCheckout } from "@/lib/platform/connect";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -50,17 +53,24 @@ export async function POST(request: Request) {
   }
   const input = parsed.data;
 
-  let client;
-  try {
-    client = await stripe();
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Payments are not configured." }, { status: 503 });
-  }
-
   const supabase = createServiceRoleSupabaseClient();
 
   try {
     const tenantId = await resolveTenantId(supabase);
+
+    // Prefer a connected Stripe Connect account (a tenant who completed onboarding, see
+    // apps/web/lib/platform/connect.ts) over the legacy tenant-owns-keys path. `connectContext`
+    // is null for every tenant who hasn't connected — including the original pre-Connect default
+    // tenant — in which case behaviour below is exactly what it was before Connect existed.
+    const connectContext = await getConnectContextForCheckout(tenantId);
+
+    let client: Stripe;
+    try {
+      client = connectContext ? platformStripe() : await stripe();
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Payments are not configured." }, { status: 503 });
+    }
+
     const cart = await resolveCart(supabase, tenantId, input.lines);
 
     const unavailable = cart.lines.filter((l) => !l.purchasable);
@@ -129,56 +139,75 @@ export async function POST(request: Request) {
     if (itemsError) throw new Error(`Could not record the order items: ${itemsError.message}`);
 
     const base = siteUrl(request);
-    const session = await client.checkout.sessions.create({
-      mode: "payment",
-      customer_email: input.email,
-      // Stripe wants the lowest denomination; our prices are already integer cents.
-      line_items: [
-        ...cart.lines.map((l) => ({
-          quantity: l.quantity,
-          price_data: {
-            currency: cart.currency.toLowerCase(),
-            unit_amount: l.unitPriceCents,
-            product_data: {
-              name: l.variantTitle ? `${l.title} — ${l.variantTitle}` : l.title,
-              ...(l.imageUrl ? { images: [l.imageUrl] } : {}),
+    // The commission fee, in integer cents like every other amount in this route — computed from
+    // the server-priced total, never trusted from the client. Only set at all when charging
+    // through a connected account; the legacy path takes no cut, unchanged.
+    const applicationFeeAmount = connectContext ? Math.round((cart.totalCents * connectContext.commissionBps) / 10000) : undefined;
+
+    const session = await client.checkout.sessions.create(
+      {
+        mode: "payment",
+        customer_email: input.email,
+        // Stripe wants the lowest denomination; our prices are already integer cents.
+        line_items: [
+          ...cart.lines.map((l) => ({
+            quantity: l.quantity,
+            price_data: {
+              currency: cart.currency.toLowerCase(),
+              unit_amount: l.unitPriceCents,
+              product_data: {
+                name: l.variantTitle ? `${l.title} — ${l.variantTitle}` : l.title,
+                ...(l.imageUrl ? { images: [l.imageUrl] } : {}),
+              },
             },
-          },
-        })),
-        ...(cart.shippingCents > 0
-          ? [
-              {
-                quantity: 1,
-                price_data: {
-                  currency: cart.currency.toLowerCase(),
-                  unit_amount: cart.shippingCents,
-                  product_data: { name: "Shipping" },
+          })),
+          ...(cart.shippingCents > 0
+            ? [
+                {
+                  quantity: 1,
+                  price_data: {
+                    currency: cart.currency.toLowerCase(),
+                    unit_amount: cart.shippingCents,
+                    product_data: { name: "Shipping" },
+                  },
                 },
-              },
-            ]
-          : []),
-        ...(cart.taxCents > 0
-          ? [
-              {
-                quantity: 1,
-                price_data: {
-                  currency: cart.currency.toLowerCase(),
-                  unit_amount: cart.taxCents,
-                  product_data: { name: "Tax" },
+              ]
+            : []),
+          ...(cart.taxCents > 0
+            ? [
+                {
+                  quantity: 1,
+                  price_data: {
+                    currency: cart.currency.toLowerCase(),
+                    unit_amount: cart.taxCents,
+                    product_data: { name: "Tax" },
+                  },
                 },
-              },
-            ]
-          : []),
-      ],
-      // The webhook trusts this to find the order — it is set by us, not the browser.
-      metadata: { orderId, tenantId },
-      payment_intent_data: { metadata: { orderId, tenantId } },
-      success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${base}/checkout?canceled=1`,
-      // Stripe collects and validates the shipping address itself where it can, but we keep ours
-      // as the record of what the customer actually entered.
-      shipping_address_collection: { allowed_countries: [input.country.toUpperCase() as "AU"] },
-    });
+              ]
+            : []),
+        ],
+        // The webhook trusts this to find the order — it is set by us, not the browser. Set
+        // regardless of which Stripe account signs the session, so markOrderPaid works identically
+        // for both the legacy and Connect paths.
+        metadata: { orderId, tenantId },
+        payment_intent_data: {
+          metadata: { orderId, tenantId },
+          // Only present on the Connect path — this is what makes Vendorae automatically receive
+          // its commission the moment the charge settles, with zero manual transfer step. Omitted
+          // entirely (not zero) on the legacy path, matching today's unmodified behaviour.
+          ...(applicationFeeAmount !== undefined ? { application_fee_amount: applicationFeeAmount } : {}),
+        },
+        success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${base}/checkout?canceled=1`,
+        // Stripe collects and validates the shipping address itself where it can, but we keep ours
+        // as the record of what the customer actually entered.
+        shipping_address_collection: { allowed_countries: [input.country.toUpperCase() as "AU"] },
+      },
+      // A Connect direct charge: money settles into the tenant's own connected account, not the
+      // platform's. Omitted entirely on the legacy path (undefined request options === no second
+      // argument), which is what keeps that path byte-for-byte the same call as before.
+      connectContext ? { stripeAccount: connectContext.stripeAccountId } : undefined,
+    );
 
     if (!session.url) throw new Error("Stripe did not return a checkout URL.");
 

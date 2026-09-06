@@ -29,6 +29,13 @@ interface PaymentsStatus {
   checkoutImplemented: boolean;
 }
 
+interface ConnectStatus {
+  connected: boolean;
+  chargesEnabled?: boolean;
+  payoutsEnabled?: boolean;
+  detailsSubmitted?: boolean;
+}
+
 function sourceLabel(source: CredentialSource | undefined, ok: boolean): string {
   if (!ok) return "";
   return source === "database" ? " — from the setup wizard" : " — from this deployment's environment";
@@ -76,6 +83,9 @@ export default function PaymentsSettingsPage() {
   const [currency, setCurrency] = useState<string>("");
   const [savingCurrency, setSavingCurrency] = useState(false);
   const [currencySavedAt, setCurrencySavedAt] = useState<string | null>(null);
+  const [connectStatus, setConnectStatus] = useState<ConnectStatus | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [connectStarting, setConnectStarting] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -90,7 +100,32 @@ export default function PaymentsSettingsPage() {
         setCurrency(currencyData.storeCurrency ?? "USD");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load payment settings"));
+
+    // Always a fresh sync-from-Stripe call, not a cached DB read — so an owner bouncing back from
+    // Stripe's hosted onboarding (?connect=return) sees accurate status immediately, without
+    // waiting on the account.updated webhook to arrive.
+    fetch("/api/admin/stripe-connect/status")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) return Promise.reject(new Error(data.error));
+        setConnectStatus(data);
+      })
+      .catch((err) => setConnectError(err instanceof Error ? err.message : "Could not load Stripe Connect status"));
   }, []);
+
+  async function startConnectOnboarding() {
+    setConnectStarting(true);
+    setConnectError(null);
+    try {
+      const res = await fetch("/api/admin/stripe-connect/start", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Could not start Stripe Connect onboarding");
+      window.location.href = data.url;
+    } catch (err) {
+      setConnectError(err instanceof Error ? err.message : "Could not start Stripe Connect onboarding");
+      setConnectStarting(false);
+    }
+  }
 
   /**
    * Saves the store's own selling currency, which the server then pushes to the dropship engine's
@@ -166,6 +201,61 @@ export default function PaymentsSettingsPage() {
           </p>
         </div>
       )}
+
+      <section className="card p-6 mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-serif text-xl">Vendorae Payments (Stripe Connect)</h2>
+          {connectStatus?.connected && (
+            <span
+              className={`text-xs px-2 py-1 ${connectStatus.chargesEnabled ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}
+            >
+              {connectStatus.chargesEnabled ? "Active" : "Onboarding incomplete"}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-stone-500 mb-4">
+          Connect a Stripe account through Vendorae and checkout charges customers directly into it — Stripe handles the
+          KYC/business details itself, Vendorae never sees them — with Vendorae&rsquo;s commission deducted automatically
+          from each order. This replaces the credentials below for this store the moment it&rsquo;s active; until then,
+          checkout keeps using whatever is configured there.
+        </p>
+
+        {connectError && <p className="text-sm text-red-600 mb-3">{connectError}</p>}
+
+        {!connectStatus ? (
+          <p className="text-sm text-stone-500">Checking connection status…</p>
+        ) : !connectStatus.connected ? (
+          <button
+            type="button"
+            onClick={startConnectOnboarding}
+            disabled={connectStarting}
+            className="text-sm px-4 py-2 border border-stone-900 bg-stone-900 text-white disabled:opacity-50"
+          >
+            {connectStarting ? "Redirecting to Stripe…" : "Connect with Stripe"}
+          </button>
+        ) : connectStatus.chargesEnabled ? (
+          <p className="text-sm text-green-700">
+            Connected — orders on this store now charge directly into your Stripe account, with Vendorae&rsquo;s
+            commission deducted automatically.
+          </p>
+        ) : (
+          <div>
+            <p className="text-sm text-amber-700 mb-3">
+              Stripe onboarding was started but hasn&rsquo;t been completed
+              {connectStatus.detailsSubmitted ? " — Stripe is still reviewing the details submitted" : ""}. Checkout keeps
+              using the credentials below until this is active.
+            </p>
+            <button
+              type="button"
+              onClick={startConnectOnboarding}
+              disabled={connectStarting}
+              className="text-sm px-4 py-2 border border-stone-900 bg-stone-900 text-white disabled:opacity-50"
+            >
+              {connectStarting ? "Redirecting to Stripe…" : "Finish onboarding"}
+            </button>
+          </div>
+        )}
+      </section>
 
       <section className="card p-6 mb-6">
         <div className="flex items-center justify-between mb-2">
