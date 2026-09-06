@@ -34,6 +34,21 @@ export async function POST(request: Request) {
   try {
     const tenantId = await resolveTenantId(supabase);
 
+    // Reachable without admin auth by design (see /api/onboarding/complete), so it must refuse
+    // to touch a store that has already finished onboarding.
+    const { data: existing, error: existingError } = await supabase
+      .from("tenant_settings")
+      .select("onboarding_completed")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+    if (existing?.onboarding_completed) {
+      return NextResponse.json(
+        { error: "Onboarding is already complete. Manage store settings from /admin/payments instead." },
+        { status: 403 },
+      );
+    }
+
     const formData = await request.formData().catch(() => null);
     const file = formData?.get("file");
     if (!file || !(file instanceof File)) {

@@ -42,7 +42,25 @@ export async function POST(request: Request) {
     (businessDescription ? `. ${businessDescription}` : ".") +
     " Flat vector style, simple bold shapes, one or two colors, centered on a plain white background, no text, no watermark, no photograph.";
 
+  const supabase = createServiceRoleSupabaseClient();
   try {
+    const tenantId = await resolveTenantId(supabase);
+
+    // Reachable without admin auth by design (see /api/onboarding/complete), so it must refuse
+    // to touch a store that has already finished onboarding.
+    const { data: existing, error: existingError } = await supabase
+      .from("tenant_settings")
+      .select("onboarding_completed")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+    if (existing?.onboarding_completed) {
+      return NextResponse.json(
+        { error: "Onboarding is already complete. Manage store settings from /admin/payments instead." },
+        { status: 403 },
+      );
+    }
+
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -67,8 +85,6 @@ export async function POST(request: Request) {
       throw new Error("OpenAI returned no usable image data.");
     }
 
-    const supabase = createServiceRoleSupabaseClient();
-    const tenantId = await resolveTenantId(supabase);
     const path = `${tenantId}/logo.png`;
     const { error: uploadError } = await supabase.storage.from("branding").upload(path, bytes, {
       contentType: "image/png",

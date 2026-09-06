@@ -38,6 +38,23 @@ export async function POST(request: Request) {
   try {
     const tenantId = await resolveTenantId(supabase);
 
+    // These routes are deliberately reachable without admin auth (the wizard runs before the
+    // owner has any way to sign in), so once a store has finished onboarding this must refuse to
+    // touch it — otherwise anyone who finds the URL could silently overwrite a live store's brand
+    // or payment credentials. Further changes go through the authenticated /admin/payments screen.
+    const { data: existing, error: existingError } = await supabase
+      .from("tenant_settings")
+      .select("onboarding_completed")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+    if (existing?.onboarding_completed) {
+      return NextResponse.json(
+        { error: "Onboarding is already complete. Manage store settings from /admin/payments instead." },
+        { status: 403 },
+      );
+    }
+
     const update: Record<string, unknown> = {
       brand_name: input.businessName,
       business_description: input.businessDescription || null,
