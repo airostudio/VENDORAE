@@ -1,0 +1,19 @@
+node_modules/
+.pnpm-store/
+dist/
+build/
+.next/
+out/
+.env
+.env.local
+.turbo/
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*
+__pycache__/
+*.pyc
+
+# Generated catalogue data (real supplier pricing/content) — never commit to
+# a public repo, hand it to the user directly instead.
+tools/*/output/
+tools/*/*.csv

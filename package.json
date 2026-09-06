@@ -1,0 +1,16 @@
+{
+  "name": "beach-footprints",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm -C apps/web dev",
+    "worker": "pnpm -C apps/worker build && node apps/worker/dist/index.js",
+    "schema": "pnpm -C packages/db schema",
+    "seed": "pnpm -C packages/db seed",
+    "db:types": "pnpm -C packages/db types"
+  }
+}
