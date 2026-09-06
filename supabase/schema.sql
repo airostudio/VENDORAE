@@ -159,6 +159,98 @@ returns boolean language sql security definer stable as $$
 $$;
 
 -- ================================================================
+-- Platform licensing (Phase 2) — one row per tenant tracking its Vendorae
+-- SaaS subscription, charged via the platform's OWN Stripe account (see
+-- apps/web/lib/platform/stripe.ts) — entirely separate from a tenant's own
+-- Stripe/PayPal keys used for THEIR customers' checkout.
+-- ================================================================
+
+create table tenant_licenses (
+  id                        uuid primary key default gen_random_uuid(),
+  tenant_id                 uuid not null unique references tenants(id) on delete cascade,
+  stripe_customer_id        text,
+  stripe_subscription_id    text,
+  -- Idempotency key for provisioning (see provision_tenant() below): the Stripe Checkout Session
+  -- that created this tenant. A unique constraint here is what lets provisioning be safely
+  -- attempted twice (webhook + /platform/welcome racing) without ever creating two tenants.
+  stripe_checkout_session_id text not null unique,
+  -- Mirrors Stripe's own subscription status vocabulary (active, past_due, canceled, incomplete,
+  -- incomplete_expired, trialing, unpaid) rather than inventing a separate one.
+  status                    text not null,
+  current_period_end        timestamptz,
+  created_at                timestamptz not null default now(),
+  updated_at                timestamptz not null default now()
+);
+create trigger trg_tenant_licenses_updated_at before update on tenant_licenses
+  for each row execute function set_updated_at();
+
+-- Creates tenants + tenant_settings + tenant_licenses for one paid Checkout Session in a single
+-- transaction. Idempotent on stripe_checkout_session_id — a second call for an already-provisioned
+-- session just returns the tenant already created for it. p_slug_base is re-deduped here (not
+-- just at checkout-initiation time) in case another purchase raced for the same name since the
+-- session was created. See apps/web/lib/platform/provisionTenant.ts for the only caller.
+create or replace function public.provision_tenant(
+  p_checkout_session_id     text,
+  p_slug_base               text,
+  p_store_name              text,
+  p_stripe_customer_id      text,
+  p_stripe_subscription_id  text,
+  p_status                  text,
+  p_current_period_end      timestamptz
+) returns table(tenant_id uuid, slug text)
+language plpgsql
+security definer
+as $$
+declare
+  v_tenant_id uuid;
+  v_slug      text;
+  v_suffix    int := 2;
+begin
+  return query
+    select tl.tenant_id, t.slug
+    from tenant_licenses tl join tenants t on t.id = tl.tenant_id
+    where tl.stripe_checkout_session_id = p_checkout_session_id;
+  if found then
+    return;
+  end if;
+
+  v_slug := p_slug_base;
+  while exists (select 1 from tenants where slug = v_slug) loop
+    v_slug := p_slug_base || '-' || v_suffix;
+    v_suffix := v_suffix + 1;
+  end loop;
+
+  insert into tenants (name, slug, is_active) values (p_store_name, v_slug, true)
+  returning id into v_tenant_id;
+
+  insert into tenant_settings (tenant_id, brand_name, onboarding_completed)
+  values (v_tenant_id, p_store_name, false);
+
+  insert into tenant_licenses (
+    tenant_id, stripe_customer_id, stripe_subscription_id, stripe_checkout_session_id,
+    status, current_period_end
+  ) values (
+    v_tenant_id, p_stripe_customer_id, p_stripe_subscription_id, p_checkout_session_id,
+    p_status, p_current_period_end
+  )
+  on conflict (stripe_checkout_session_id) do nothing;
+
+  if not found then
+    delete from tenant_settings where tenant_id = v_tenant_id;
+    delete from tenants where id = v_tenant_id;
+
+    return query
+      select tl.tenant_id, t.slug
+      from tenant_licenses tl join tenants t on t.id = tl.tenant_id
+      where tl.stripe_checkout_session_id = p_checkout_session_id;
+    return;
+  end if;
+
+  return query select v_tenant_id, v_slug;
+end;
+$$;
+
+-- ================================================================
 -- Customers
 -- ================================================================
 
@@ -755,6 +847,7 @@ create table app_integrations (
 
 alter table tenants enable row level security;
 alter table tenant_settings enable row level security;
+alter table tenant_licenses enable row level security;
 alter table tax_settings enable row level security;
 alter table memberships enable row level security;
 alter table audit_logs enable row level security;

@@ -186,6 +186,18 @@ PAYPAL_CLIENT_ID=
 PAYPAL_CLIENT_SECRET=
 PAYPAL_MODE=                   # "sandbox" or "live"; defaults to sandbox
 
+# Platform licensing (Phase 2) — the marketing/pricing page at the bare platform root domain
+# (apps/web/app/platform), where a buyer purchases a subscription license and gets their own
+# tenant auto-provisioned. Uses the PLATFORM's OWN Stripe account — entirely separate from
+# STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET above, which are a TENANT's own keys for their
+# customers' checkout. Without these set, /platform renders an honest "not configured yet" state
+# instead of crashing.
+PLATFORM_STRIPE_SECRET_KEY=      # the platform's own Stripe secret key (charges the SaaS license fee)
+PLATFORM_STRIPE_WEBHOOK_SECRET=  # signing secret for POST /api/webhooks/platform-stripe
+PLATFORM_LICENSE_PRICE_ID=       # Stripe Price id (recurring) for the one subscription plan — its
+                                  # unit_amount/currency are fetched live and rendered on /platform,
+                                  # never hardcoded
+
 # Optional — enables the /onboarding wizard's "AI Generate" logo button
 # (apps/web/app/api/onboarding/logo/generate/route.ts). Without it, that
 # endpoint returns a clear error and the wizard's upload option still works.

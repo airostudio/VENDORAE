@@ -184,6 +184,35 @@ async function isOnboardingCompleted(slug: string): Promise<boolean> {
   }
 }
 
+/**
+ * Whether the current tenant's platform subscription license has been canceled — read directly
+ * via a plain REST call (service-role key), same shape and same fail-open philosophy as
+ * `isOnboardingCompleted` above. Only `canceled` blocks the storefront; `past_due` is a grace
+ * period, not a hard stop, and any missing row (a tenant provisioned before licensing existed, or
+ * one with no license row for any other reason) or lookup error is treated as fine — a DB hiccup
+ * or an unmigrated tenant must never take a whole store down.
+ */
+async function isTenantLicenseCanceled(slug: string): Promise<boolean> {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return false;
+
+  try {
+    const endpoint = `${url.replace(/\/$/, "")}/rest/v1/tenants?select=tenant_licenses(status)&slug=eq.${encodeURIComponent(slug)}`;
+    const response = await fetch(endpoint, { headers: restHeaders(serviceKey), cache: "no-store" });
+    if (!response.ok) return false;
+    const rows = (await response.json()) as Array<{ tenant_licenses: { status: string } | { status: string }[] | null }>;
+    const row = rows[0];
+    if (!row) return false;
+    const license = Array.isArray(row.tenant_licenses) ? row.tenant_licenses[0] : row.tenant_licenses;
+    if (!license) return false;
+    return license.status === "canceled";
+  } catch (error) {
+    console.error(`[middleware] could not check license status: ${error instanceof Error ? error.message : error}`);
+    return false;
+  }
+}
+
 const STATIC_FILE = /\.[a-zA-Z0-9]+$/;
 
 export async function middleware(request: NextRequest) {
@@ -196,17 +225,12 @@ export async function middleware(request: NextRequest) {
 
   const hostResolution = resolveHostTenant(request.headers.get("host"));
 
-  // The bare platform domain (no tenant subdomain) isn't any tenant's store — rewrite storefront
-  // requests to a placeholder page rather than silently serving whichever tenant
-  // DEFAULT_TENANT_SLUG happens to point at. Admin/API/onboarding paths have no Phase-1 meaning
-  // of their own at the apex, so they fall through to the ordinary (default-tenant) handling below
-  // rather than getting a bespoke branch here.
-  if (
-    hostResolution.isPlatformRoot &&
-    !pathname.startsWith("/admin") &&
-    !pathname.startsWith("/api") &&
-    !pathname.startsWith("/onboarding")
-  ) {
+  // The bare platform domain (no tenant subdomain) isn't any tenant's store. Only the literal
+  // root path gets rewritten to the platform marketing/pricing page — every other apex path
+  // (/platform/welcome, /api/platform/checkout, /api/webhooks/platform-stripe, ...) has a real
+  // route of its own and must be left alone, or its path and query string (e.g. a Stripe
+  // ?session_id=... return URL) would be silently discarded by the rewrite.
+  if (hostResolution.isPlatformRoot && pathname === "/") {
     return NextResponse.rewrite(new URL("/platform", request.url));
   }
 
@@ -223,8 +247,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // At the apex domain there is no real tenant — hostResolution.slug is just the meaningless
+  // DEFAULT_TENANT_SLUG fallback — so the onboarding-completed check below is nonsensical here
+  // and could wrongly redirect a platform page (e.g. /platform/welcome) to /onboarding if the
+  // default tenant itself hasn't finished setup. Every remaining apex-domain request just proceeds.
+  if (hostResolution.isPlatformRoot) {
+    return NextResponse.next();
+  }
+
   if (!(await isOnboardingCompleted(hostResolution.slug))) {
     return NextResponse.redirect(new URL("/onboarding", request.url));
+  }
+
+  // A canceled platform license blocks the storefront (not /admin, handled above, so the owner
+  // can still see why and potentially resubscribe) with a simple "no longer available" page
+  // rather than the normal homepage/shop.
+  if (await isTenantLicenseCanceled(hostResolution.slug)) {
+    return NextResponse.rewrite(new URL("/store-unavailable", request.url));
   }
 
   return NextResponse.next();
