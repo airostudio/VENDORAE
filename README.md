@@ -171,7 +171,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=   # server-only — never expose to the browser
 DEFAULT_TENANT_SLUG=          # optional, defaults to "default-store" — used when the request Host isn't a <slug>.<PLATFORM_ROOT_DOMAIN> (local dev, previews)
-PLATFORM_ROOT_DOMAIN=          # optional, defaults to "vendorae.com" — stores are addressed as <slug>.<this>; the bare domain (or www.) serves the platform placeholder at /platform
+PLATFORM_ROOT_DOMAIN=          # optional, defaults to "vendorae.store" — stores are addressed as <slug>.<this>; the bare domain (or www.) serves the platform placeholder at /platform
 ADMIN_PASSWORD=                # break-glass HTTP Basic Auth for /admin and /api/admin/* — only works for a tenant with zero `memberships` rows; see middleware.ts and /admin/create-account
 
 # Stripe — optional here if you'd rather let each owner enter their own keys via the

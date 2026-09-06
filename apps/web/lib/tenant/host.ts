@@ -5,12 +5,12 @@
  * runtimes can use the exact same rule and never disagree.
  *
  * Stores are addressed by subdomain: `<slug>.<PLATFORM_ROOT_DOMAIN>` (e.g.
- * `client1.vendorae.com`). Custom domains are a reserved Phase 3 upgrade (see
+ * `client1.vendorae.store`). Custom domains are a reserved Phase 3 upgrade (see
  * `tenants.custom_domain` in supabase/schema.sql) — not resolved here yet.
  */
 
 export function getPlatformRootDomain(): string {
-  return (process.env.PLATFORM_ROOT_DOMAIN || "vendorae.com").trim().toLowerCase();
+  return (process.env.PLATFORM_ROOT_DOMAIN || "vendorae.store").trim().toLowerCase();
 }
 
 export function getDefaultTenantSlug(): string {
