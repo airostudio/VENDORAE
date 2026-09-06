@@ -250,6 +250,16 @@ begin
 end;
 $$;
 
+-- provision_tenant() is SECURITY DEFINER and trusts its p_status/p_checkout_session_id arguments
+-- completely — it does no Stripe verification itself (that happens in
+-- apps/web/lib/platform/provisionTenant.ts before it ever calls this). PostgREST exposes every
+-- public-schema function as an RPC endpoint by default, so without this, anyone holding the
+-- public anon key could call /rest/v1/rpc/provision_tenant directly with a fabricated session id
+-- and status="active" and mint themselves a free store, bypassing payment entirely. Lock it down
+-- to the service role, which is the only caller (createServiceRoleSupabaseClient()).
+revoke execute on function public.provision_tenant(text, text, text, text, text, text, timestamptz) from public, anon, authenticated;
+grant execute on function public.provision_tenant(text, text, text, text, text, text, timestamptz) to service_role;
+
 -- ================================================================
 -- Customers
 -- ================================================================
