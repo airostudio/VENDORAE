@@ -27,6 +27,13 @@ export function platformStripe(): Stripe {
   return cachedClient;
 }
 
+/**
+ * Whether the platform's own Stripe account is set up at all, i.e. whether ANY paid plan checkout
+ * can run. Since plans (apps/web/lib/platform/plans.ts) now each carry their own
+ * `stripe_price_id`, this no longer checks for a single price env var the way it did when there
+ * was only one flat license price — a specific plan being purchasable is decided per-plan by
+ * whether its own `stripe_price_id` is set, not by this function.
+ */
 export function isPlatformLicensingConfigured(): boolean {
-  return Boolean(process.env.PLATFORM_STRIPE_SECRET_KEY && process.env.PLATFORM_LICENSE_PRICE_ID);
+  return Boolean(process.env.PLATFORM_STRIPE_SECRET_KEY);
 }

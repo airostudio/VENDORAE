@@ -38,12 +38,26 @@ export async function GET() {
   }
 
   let storeCurrency: string | null = null;
+  let plan: { name: string; commissionBps: number } | null = null;
   try {
     const supabase = createServiceRoleSupabaseClient();
     const tenantId = await resolveTenantId(supabase);
     const { data } = await supabase.from("product_variants").select("currency").limit(1).maybeSingle();
     storeCurrency = (data?.currency as string | undefined) ?? null;
-    void tenantId;
+
+    // A tenant with no tenant_licenses row at all (provisioned before Phase 2, or before plans
+    // existed) or with plan_id null (provisioned before this migration) has no plan on file —
+    // reported honestly below rather than defaulting to any particular plan's numbers.
+    const { data: license } = await supabase
+      .from("tenant_licenses")
+      .select("commission_bps, plans(name)")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    const planName = (license?.plans as { name: string } | { name: string }[] | null | undefined) ?? null;
+    const resolvedPlanName = Array.isArray(planName) ? planName[0]?.name : planName?.name;
+    if (license && resolvedPlanName) {
+      plan = { name: resolvedPlanName, commissionBps: license.commission_bps as number };
+    }
   } catch {
     // Same — best-effort context, not the point of the endpoint.
   }
@@ -73,6 +87,7 @@ export async function GET() {
     },
     sellingCurrency,
     storeCurrency,
+    plan,
     // Checkout is wired to Stripe (see /api/checkout/session and /api/webhooks/stripe); whether it
     // can actually take money now depends only on the credentials above. PayPal credentials can be
     // saved and are reported here, but checkout does not yet offer PayPal as a payment method —

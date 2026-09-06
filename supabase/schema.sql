@@ -159,6 +159,93 @@ returns boolean language sql security definer stable as $$
 $$;
 
 -- ================================================================
+-- Tiered platform plans (added in migration 0013, replacing the "one flat
+-- license price" model from Phase 2). Starter/Business/Pro/Elite are paid
+-- subscription tiers; `free` ("Start Selling") takes no subscription fee at
+-- all and instead charges a higher direct-sale commission — a deliberate
+-- $0-upfront acquisition channel ("no sale = they pay nothing").
+-- ================================================================
+
+create table plans (
+  id                          uuid primary key default gen_random_uuid(),
+  slug                        text not null unique,             -- 'free' | 'starter' | 'business' | 'pro' | 'elite'
+  name                        text not null,                    -- display name, e.g. "Business"
+  -- Display only. For a paid plan, the real charge is whatever Stripe Price `stripe_price_id`
+  -- points at — this column exists so the free plan (stripe_price_id null) still has something to
+  -- render, and so the pricing page doesn't need a live Stripe call per plan just to show a price.
+  monthly_price_cents         int not null default 0,
+  -- null = no Stripe subscription at all (the free/commission-only plan, or a paid tier the
+  -- operator hasn't finished configuring a real Stripe Price for yet).
+  stripe_price_id             text,
+  -- This plan's DIRECT-sale commission rate, in basis points (200 = 2%). Copied onto
+  -- tenant_licenses.commission_bps at provisioning time — see provision_tenant() below.
+  commission_bps              int not null default 0,
+  -- RESERVED for a future marketplace-attributed-order rate. Nothing reads or writes this column
+  -- yet — it exists purely so this migration doesn't need revisiting when that feature ships.
+  marketplace_commission_bps  int not null default 0,
+  product_limit               int,                               -- null = unlimited
+  staff_limit                 int not null default 1,
+  custom_domain_allowed       boolean not null default false,
+  feature_list                text[] not null default '{}',      -- marketing bullet points for the pricing page
+  sort_order                  int not null default 0,
+  is_active                   boolean not null default true,
+  created_at                  timestamptz not null default now(),
+  updated_at                  timestamptz not null default now()
+);
+create trigger trg_plans_updated_at before update on plans
+  for each row execute function set_updated_at();
+
+-- Public-facing catalog data, but read only through server-rendered pages using the service-role
+-- client — the same convention this codebase already uses for other public-but-not-tenant-scoped
+-- catalog data (see apps/web/lib/data/categories.ts). No anon/authenticated SELECT policy needed.
+alter table plans enable row level security;
+
+insert into plans
+  (slug, name, monthly_price_cents, stripe_price_id, commission_bps, product_limit, staff_limit, custom_domain_allowed, feature_list, sort_order)
+values
+  ('free', 'Start Selling', 0, null, 500, 15, 1, false,
+    array[
+      'No monthly fee — pay only a commission when you make a sale',
+      'Up to 15 products',
+      'AI store builder and AliExpress product importing',
+      'Your own subdomain storefront'
+    ], 0),
+  -- $29/month placeholder for display until the operator creates a real Stripe Price for this
+  -- tier and sets stripe_price_id — the live Stripe amount is what's actually charged once that's
+  -- configured; until then this plan simply isn't purchasable (see /api/platform/checkout).
+  ('starter', 'Starter', 2900, null, 200, 50, 1, false,
+    array[
+      'Up to 50 products',
+      'Lower 2% commission on direct sales',
+      'AI store builder and AliExpress product importing',
+      'Abandoned cart emails'
+    ], 1),
+  ('business', 'Business', 7900, null, 100, 500, 3, true,
+    array[
+      'Up to 500 products',
+      '1% commission on direct sales',
+      '3 staff seats',
+      'Custom domain support',
+      'Abandoned cart emails'
+    ], 2),
+  ('pro', 'Pro', 14900, null, 50, null, 10, true,
+    array[
+      'Unlimited products',
+      '0.5% commission on direct sales',
+      '10 staff seats',
+      'Custom domain support',
+      'Priority support'
+    ], 3),
+  ('elite', 'Elite', 29900, null, 25, null, 10, true,
+    array[
+      'Unlimited products',
+      '0.25% commission on direct sales',
+      '10 staff seats',
+      'Custom domain support',
+      'Priority support'
+    ], 4);
+
+-- ================================================================
 -- Platform licensing (Phase 2) — one row per tenant tracking its Vendorae
 -- SaaS subscription, charged via the platform's OWN Stripe account (see
 -- apps/web/lib/platform/stripe.ts) — entirely separate from a tenant's own
@@ -171,31 +258,39 @@ create table tenant_licenses (
   stripe_customer_id        text,
   stripe_subscription_id    text,
   -- Idempotency key for provisioning (see provision_tenant() below): the Stripe Checkout Session
-  -- that created this tenant. A unique constraint here is what lets provisioning be safely
-  -- attempted twice (webhook + /platform/welcome racing) without ever creating two tenants.
+  -- that created this tenant, or (for a free-plan signup, which has no real Stripe session) a
+  -- synthetic `free_<uuid>` key — see apps/web/lib/platform/provisionTenant.ts's
+  -- provisionFreeTenant(). A unique constraint here is what lets provisioning be safely attempted
+  -- twice (webhook + /platform/welcome racing) without ever creating two tenants.
   stripe_checkout_session_id text not null unique,
   -- Mirrors Stripe's own subscription status vocabulary (active, past_due, canceled, incomplete,
-  -- incomplete_expired, trialing, unpaid) rather than inventing a separate one.
+  -- incomplete_expired, trialing, unpaid) rather than inventing a separate one. A free-plan tenant
+  -- is always "active" — there's no billing state to track.
   status                    text not null,
   current_period_end        timestamptz,
-  -- The commission Vendorae takes on a Connect-charged order, in basis points (200 = 2%). A flat
-  -- placeholder until tiered plans (Starter/Business/Pro/Elite) exist and this becomes plan-driven
-  -- instead. IMPORTANT: this default only applies to rows inserted from here on — a tenant with NO
+  -- The commission Vendorae takes on a Connect-charged order, in basis points (200 = 2%). Set from
+  -- the tenant's plan (plans.commission_bps) at provisioning time (migration 0013) — IMPORTANT:
+  -- this column's default only applies to rows inserted from here on — a tenant with NO
   -- tenant_licenses row at all (every tenant provisioned before this column existed) must be
   -- treated as 0 commission by application code, never as this default; see
   -- apps/web/lib/platform/connect.ts's getConnectContextForCheckout.
   commission_bps            integer not null default 200,
+  -- Which plan (see `plans` above) this tenant was provisioned under. Nullable: rows created
+  -- before plans existed have none — application code must show that honestly ("no plan on
+  -- file"), never assume it means the free plan.
+  plan_id                   uuid references plans(id),
   created_at                timestamptz not null default now(),
   updated_at                timestamptz not null default now()
 );
 create trigger trg_tenant_licenses_updated_at before update on tenant_licenses
   for each row execute function set_updated_at();
 
--- Creates tenants + tenant_settings + tenant_licenses for one paid Checkout Session in a single
--- transaction. Idempotent on stripe_checkout_session_id — a second call for an already-provisioned
--- session just returns the tenant already created for it. p_slug_base is re-deduped here (not
--- just at checkout-initiation time) in case another purchase raced for the same name since the
--- session was created. See apps/web/lib/platform/provisionTenant.ts for the only caller.
+-- Creates tenants + tenant_settings + tenant_licenses for one paid Checkout Session (or, for the
+-- free plan, a synthetic idempotency key — see provisionFreeTenant()) in a single transaction.
+-- Idempotent on stripe_checkout_session_id — a second call for an already-provisioned session just
+-- returns the tenant already created for it. p_slug_base is re-deduped here (not just at
+-- checkout-initiation time) in case another purchase raced for the same name since the session was
+-- created. See apps/web/lib/platform/provisionTenant.ts for the only callers.
 create or replace function public.provision_tenant(
   p_checkout_session_id     text,
   p_slug_base               text,
@@ -203,7 +298,9 @@ create or replace function public.provision_tenant(
   p_stripe_customer_id      text,
   p_stripe_subscription_id  text,
   p_status                  text,
-  p_current_period_end      timestamptz
+  p_current_period_end      timestamptz,
+  p_plan_id                 uuid,
+  p_commission_bps          int
 ) returns table(tenant_id uuid, slug text)
 language plpgsql
 security definer
@@ -235,10 +332,10 @@ begin
 
   insert into tenant_licenses (
     tenant_id, stripe_customer_id, stripe_subscription_id, stripe_checkout_session_id,
-    status, current_period_end
+    status, current_period_end, plan_id, commission_bps
   ) values (
     v_tenant_id, p_stripe_customer_id, p_stripe_subscription_id, p_checkout_session_id,
-    p_status, p_current_period_end
+    p_status, p_current_period_end, p_plan_id, p_commission_bps
   )
   on conflict (stripe_checkout_session_id) do nothing;
 
@@ -257,15 +354,15 @@ begin
 end;
 $$;
 
--- provision_tenant() is SECURITY DEFINER and trusts its p_status/p_checkout_session_id arguments
--- completely — it does no Stripe verification itself (that happens in
--- apps/web/lib/platform/provisionTenant.ts before it ever calls this). PostgREST exposes every
--- public-schema function as an RPC endpoint by default, so without this, anyone holding the
--- public anon key could call /rest/v1/rpc/provision_tenant directly with a fabricated session id
--- and status="active" and mint themselves a free store, bypassing payment entirely. Lock it down
--- to the service role, which is the only caller (createServiceRoleSupabaseClient()).
-revoke execute on function public.provision_tenant(text, text, text, text, text, text, timestamptz) from public, anon, authenticated;
-grant execute on function public.provision_tenant(text, text, text, text, text, text, timestamptz) to service_role;
+-- provision_tenant() is SECURITY DEFINER and trusts its arguments completely — it does no Stripe
+-- verification itself (that happens in apps/web/lib/platform/provisionTenant.ts before it ever
+-- calls this). PostgREST exposes every public-schema function as an RPC endpoint by default, so
+-- without this, anyone holding the public anon key could call /rest/v1/rpc/provision_tenant
+-- directly with a fabricated session id and status="active" and mint themselves a free store,
+-- bypassing payment entirely. Lock it down to the service role, which is the only caller
+-- (createServiceRoleSupabaseClient()).
+revoke execute on function public.provision_tenant(text, text, text, text, text, text, timestamptz, uuid, int) from public, anon, authenticated;
+grant execute on function public.provision_tenant(text, text, text, text, text, text, timestamptz, uuid, int) to service_role;
 
 -- ================================================================
 -- Stripe Connect (Phase 3) — one row per tenant tracking its connected Stripe

@@ -27,6 +27,7 @@ interface PaymentsStatus {
   sellingCurrency: string | null;
   storeCurrency: string | null;
   checkoutImplemented: boolean;
+  plan: { name: string; commissionBps: number } | null;
 }
 
 interface ConnectStatus {
@@ -201,6 +202,18 @@ export default function PaymentsSettingsPage() {
           </p>
         </div>
       )}
+
+      <section className="card p-6 mb-6">
+        <h2 className="font-serif text-xl mb-2">Your plan</h2>
+        {status.plan ? (
+          <p className="text-sm text-stone-600">
+            <span className="font-medium">{status.plan.name}</span> — {(status.plan.commissionBps / 100).toString()}%
+            commission on direct sales.
+          </p>
+        ) : (
+          <p className="text-sm text-stone-600">No plan on file — 0% commission.</p>
+        )}
+      </section>
 
       <section className="card p-6 mb-6">
         <div className="flex items-center justify-between mb-2">

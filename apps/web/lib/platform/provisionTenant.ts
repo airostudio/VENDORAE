@@ -43,8 +43,14 @@ export async function provisionTenantFromCheckoutSession(sessionId: string): Pro
 
   const slugBase = session.metadata?.slug;
   const storeName = session.metadata?.storeName;
-  if (!slugBase || !storeName) {
-    return { error: "Checkout session is missing slug/storeName metadata" };
+  const planId = session.metadata?.planId;
+  const commissionBpsRaw = session.metadata?.commissionBps;
+  if (!slugBase || !storeName || !planId || commissionBpsRaw == null) {
+    return { error: "Checkout session is missing slug/storeName/planId/commissionBps metadata" };
+  }
+  const commissionBps = Number(commissionBpsRaw);
+  if (!Number.isFinite(commissionBps)) {
+    return { error: "Checkout session has an invalid commissionBps metadata value" };
   }
 
   const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
@@ -75,6 +81,58 @@ export async function provisionTenantFromCheckoutSession(sessionId: string): Pro
     p_stripe_subscription_id: subscriptionId,
     p_status: status,
     p_current_period_end: currentPeriodEnd,
+    p_plan_id: planId,
+    p_commission_bps: commissionBps,
+  });
+
+  if (error) return { error: `Provisioning failed: ${error.message}` };
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.slug) return { error: "Provisioning did not return a tenant" };
+
+  return { slug: row.slug as string };
+}
+
+/**
+ * Provisions a tenant on the `free` plan, which has no Stripe subscription at all — so unlike
+ * provisionTenantFromCheckoutSession above, this never touches Stripe. Called directly from
+ * /api/platform/checkout for the free plan (see step 4 of the plans task) instead of creating a
+ * Checkout Session, giving a $0-upfront signup that goes straight to "your store is ready".
+ *
+ * There's no real Stripe Checkout Session to key idempotency off, and no natural retry/race for a
+ * free signup the way a webhook delivery has — so a fresh UUID-based synthetic key is generated
+ * per call purely to satisfy tenant_licenses.stripe_checkout_session_id's `not null unique`
+ * constraint, not as a meaningful idempotency guard.
+ */
+export async function provisionFreeTenant(
+  storeName: string,
+  email: string,
+  planId: string,
+  commissionBps: number,
+): Promise<ProvisionResult> {
+  void email; // Not persisted anywhere yet — no customer/contact record exists for a platform buyer.
+
+  const supabase = createServiceRoleSupabaseClient();
+
+  let slug: string | null;
+  try {
+    slug = await deriveAvailableSlug(supabase, storeName);
+  } catch (error) {
+    return { error: `Could not validate that store name: ${error instanceof Error ? error.message : error}` };
+  }
+  if (!slug) {
+    return { error: "That store name doesn't contain any usable letters or numbers — try another." };
+  }
+
+  const { data, error } = await supabase.rpc("provision_tenant", {
+    p_checkout_session_id: `free_${crypto.randomUUID()}`,
+    p_slug_base: slug,
+    p_store_name: storeName,
+    p_stripe_customer_id: null,
+    p_stripe_subscription_id: null,
+    p_status: "active",
+    p_current_period_end: null,
+    p_plan_id: planId,
+    p_commission_bps: commissionBps,
   });
 
   if (error) return { error: `Provisioning failed: ${error.message}` };

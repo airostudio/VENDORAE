@@ -186,17 +186,21 @@ PAYPAL_CLIENT_ID=
 PAYPAL_CLIENT_SECRET=
 PAYPAL_MODE=                   # "sandbox" or "live"; defaults to sandbox
 
-# Platform licensing (Phase 2) — the marketing/pricing page at the bare platform root domain
-# (apps/web/app/platform), where a buyer purchases a subscription license and gets their own
+# Platform licensing (Phase 2, tiered in Phase 4) — the marketing/pricing page at the bare
+# platform root domain (apps/web/app/platform), where a buyer picks one of several plans (see the
+# `plans` table / apps/web/lib/platform/plans.ts — Starter/Business/Pro/Elite subscriptions plus a
+# $0-upfront "Start Selling" free plan that takes a higher commission instead) and gets their own
 # tenant auto-provisioned. Uses the PLATFORM's OWN Stripe account — entirely separate from
 # STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET above, which are a TENANT's own keys for their
-# customers' checkout. Without these set, /platform renders an honest "not configured yet" state
-# instead of crashing.
-PLATFORM_STRIPE_SECRET_KEY=      # the platform's own Stripe secret key (charges the SaaS license fee)
+# customers' checkout. Without PLATFORM_STRIPE_SECRET_KEY set, any plan with a Stripe subscription
+# attached is refused with an honest "not configured yet" error instead of crashing; the free plan
+# never needs Stripe at all.
+PLATFORM_STRIPE_SECRET_KEY=      # the platform's own Stripe secret key (charges each plan's SaaS subscription fee)
 PLATFORM_STRIPE_WEBHOOK_SECRET=  # signing secret for POST /api/webhooks/platform-stripe
-PLATFORM_LICENSE_PRICE_ID=       # Stripe Price id (recurring) for the one subscription plan — its
-                                  # unit_amount/currency are fetched live and rendered on /platform,
-                                  # never hardcoded
+# There is no PLATFORM_LICENSE_PRICE_ID env var anymore — each plan now carries its own
+# stripe_price_id column on the `plans` table (nullable; null means that plan isn't purchasable
+# yet, or is the free plan which is never purchased through Stripe). Set it per-plan directly in
+# the database once you've created the corresponding recurring Price in the Stripe Dashboard.
 
 # Stripe Connect (Phase 3) — a tenant connects a real Stripe Express account from /admin/payments
 # (apps/web/lib/platform/connect.ts) and their checkout then charges customers directly into it,

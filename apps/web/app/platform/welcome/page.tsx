@@ -12,13 +12,21 @@ export const dynamic = "force-dynamic";
  * (/api/webhooks/platform-stripe) calls the exact same idempotent function, so whichever of the
  * two runs first wins and the other is a safe no-op — see
  * apps/web/lib/platform/provisionTenant.ts for how that race is resolved.
+ *
+ * The free plan has no Stripe Checkout Session at all — /api/platform/checkout provisions it
+ * synchronously and redirects straight here with `?slug=` instead of `?session_id=`. There's
+ * nothing left to provision or any race to resolve in that case, so it's just the success view.
  */
 export default async function PlatformWelcomePage({
   searchParams,
 }: {
-  searchParams: { session_id?: string };
+  searchParams: { session_id?: string; slug?: string };
 }) {
-  const sessionId = searchParams.session_id;
+  const { session_id: sessionId, slug: freeSlug } = searchParams;
+
+  if (freeSlug) {
+    return <SuccessView slug={freeSlug} />;
+  }
 
   if (!sessionId) {
     return (
@@ -42,7 +50,11 @@ export default async function PlatformWelcomePage({
     );
   }
 
-  const storeUrl = `https://${result.slug}.${getPlatformRootDomain()}/onboarding`;
+  return <SuccessView slug={result.slug} />;
+}
+
+function SuccessView({ slug }: { slug: string }) {
+  const storeUrl = `https://${slug}.${getPlatformRootDomain()}/onboarding`;
 
   return (
     <Shell>
