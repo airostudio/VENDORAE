@@ -2,7 +2,7 @@ import "server-only";
 
 /**
  * Thin adapter over the dropship-engine REST API (see /dropship-engine's
- * README). Beach Footprints is just one connected store — this file is the
+ * README). This storefront is just one connected store — this file is the
  * whole integration surface: everything below sends externalProductId/
  * externalVariantId/externalOrderId as this store's own products.id/
  * product_variants.id/orders.id, and never has to know or store any of the

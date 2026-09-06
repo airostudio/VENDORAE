@@ -1,8 +1,8 @@
 -- ============================================================================
--- Beach Footprints — combined migration 0003 → 0006
+-- Vendorae — combined migration 0003 → 0006
 --
 -- Everything outstanding for the AliExpress staging area, in one file. Run it
--- against the BEACH FOOTPRINTS Supabase project (the one holding products,
+-- against the VENDORAE Supabase project (the one holding products,
 -- categories and tenants) — NOT the dropship engine's database.
 --
 -- Safe to run on a database where some of these have already been applied:

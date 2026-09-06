@@ -54,7 +54,7 @@ export async function commitAliExpressImport(
     description: staged.description,
     seo_title: staged.seoTitle,
     seo_desc: staged.seoDesc,
-    brand: staged.brand ?? "Beach Footprints",
+    brand: staged.brand ?? null,
     status: staged.publish ? "PUBLISHED" : "DRAFT",
   };
 

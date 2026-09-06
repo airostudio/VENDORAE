@@ -1,5 +1,5 @@
 -- ============================================================
--- Beach Footprints AliExpress dropshipping engine: supplier linkage on
+-- Vendorae AliExpress dropshipping engine: supplier linkage on
 -- products/variants, fulfillment tracking on orders, price-change audit
 -- log, and a fulfillment/sync event log. Safe to re-run (IF NOT EXISTS
 -- everywhere).

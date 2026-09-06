@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getGuides } from "@/lib/data/guides";
+import { getTenantBranding } from "@/lib/tenantSettings";
 
-export const metadata: Metadata = { title: "Guides", description: "Style, care and material guides from Beach Footprints." };
+export async function generateMetadata(): Promise<Metadata> {
+  const { brandName } = await getTenantBranding();
+  return { title: "Guides", description: `Style, care and product guides from ${brandName}.` };
+}
 export const dynamic = "force-dynamic";
 
 export default async function GuidesPage() {

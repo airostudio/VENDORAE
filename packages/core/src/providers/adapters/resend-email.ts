@@ -9,7 +9,7 @@ function renderBody(email: TransactionalEmail): { subject: string; html: string 
       const items = Array.isArray(data.items) ? (data.items as Array<{ name: string; quantity: number }>) : [];
       const rows = items.map((item) => `<li>${item.quantity} × ${item.name}</li>`).join("");
       return {
-        subject: email.subject ?? "Your Beach Footprints order is confirmed",
+        subject: email.subject ?? "Your order is confirmed",
         html: `<p>Thanks for your order! We've received your payment for order <strong>${data.orderId}</strong>.</p>${rows ? `<ul>${rows}</ul>` : ""}<p>Total: ${data.total}</p><p>We'll email you again once it ships.</p>`,
       };
     }
@@ -19,7 +19,7 @@ function renderBody(email: TransactionalEmail): { subject: string; html: string 
         ? `<a href="${trackingUrl}">${data.trackingNumber}</a>`
         : String(data.trackingNumber ?? "");
       return {
-        subject: email.subject ?? "Your Beach Footprints order has shipped",
+        subject: email.subject ?? "Your order has shipped",
         html: `<p>Your order <strong>${data.orderId}</strong> has shipped via ${data.carrier}.</p><p>Tracking: ${tracking}</p>`,
       };
     }

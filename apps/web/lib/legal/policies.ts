@@ -20,8 +20,8 @@
 
 /** The specifics a lawyer will ask for. Replace before launch — see README. */
 export const TRADING_ENTITY = {
-  storeName: "Beach Footprints",
-  website: "beachfootprint.com.au",
+  storeName: "Your Store",
+  website: "",
   /** Registered company/sole-trader name and ABN, once confirmed. */
   legalName: null as string | null,
   abn: null as string | null,
@@ -175,7 +175,7 @@ const TERMS: PolicyDocument = {
     {
       heading: "Who you're buying from",
       paragraphs: [
-        `These terms apply to your use of ${TRADING_ENTITY.website} and to anything you buy from us. By placing an order you accept them. We sell to you directly — we are the seller, not a marketplace or an agent for someone else — even though the items are shipped to you by our suppliers.`,
+        `These terms apply to your use of this site${TRADING_ENTITY.website ? ` (${TRADING_ENTITY.website})` : ""} and to anything you buy from us. By placing an order you accept them. We sell to you directly — we are the seller, not a marketplace or an agent for someone else — even though the items are shipped to you by our suppliers.`,
       ],
     },
     {

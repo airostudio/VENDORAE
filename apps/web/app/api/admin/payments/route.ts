@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
 import { getSettings } from "@/lib/dropshipEngine";
+import { getPayPalCredentials, getStripeCredentials } from "@/lib/config/paymentCredentials";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -10,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** "sk_live_…"/"pk_live_…" vs "sk_test_…" — the only part of a key that's safe to report. */
-function keyMode(key: string | undefined): "live" | "test" | null {
+function keyMode(key: string | undefined | null): "live" | "test" | null {
   if (!key) return null;
   if (key.includes("_live_")) return "live";
   if (key.includes("_test_")) return "test";
@@ -20,15 +21,13 @@ function keyMode(key: string | undefined): "live" | "test" | null {
 /**
  * Reports how payments are configured, without ever returning a key.
  *
- * Stripe credentials are read from environment variables rather than stored in the database:
- * a secret key in a table is one SQL injection or careless query away from being leaked, and
- * rotating it should be a deploy setting, not a row edit. So this endpoint answers "is it set
- * up, and in which mode" — the questions an admin screen actually needs.
+ * Credentials come from getStripeCredentials()/getPayPalCredentials() — this deployment's own env
+ * vars if set, otherwise whatever the /onboarding wizard saved for the tenant — so this screen
+ * reflects what checkout will actually use either way, along with which source each field came
+ * from ("env" vs "database"), the questions an admin screen actually needs.
  */
 export async function GET() {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const [stripeCreds, paypalCreds] = await Promise.all([getStripeCredentials(), getPayPalCredentials()]);
 
   let sellingCurrency: string | null = null;
   try {
@@ -49,23 +48,35 @@ export async function GET() {
     // Same — best-effort context, not the point of the endpoint.
   }
 
-  const secretMode = keyMode(secretKey);
-  const publishableMode = keyMode(publishableKey);
+  const secretMode = keyMode(stripeCreds.secretKey);
+  const publishableMode = keyMode(stripeCreds.publishableKey);
 
   return NextResponse.json({
     stripe: {
-      secretKeyConfigured: Boolean(secretKey),
-      publishableKeyConfigured: Boolean(publishableKey),
-      webhookSecretConfigured: Boolean(webhookSecret),
+      secretKeyConfigured: Boolean(stripeCreds.secretKey),
+      publishableKeyConfigured: Boolean(stripeCreds.publishableKey),
+      webhookSecretConfigured: Boolean(stripeCreds.webhookSecret),
+      secretKeySource: stripeCreds.secretKeySource,
+      publishableKeySource: stripeCreds.publishableKeySource,
+      webhookSecretSource: stripeCreds.webhookSecretSource,
       mode: secretMode,
       // A live secret key paired with a test publishable key (or vice versa) fails at
       // checkout in a way that's tedious to diagnose from the error alone.
       modeMismatch: Boolean(secretMode && publishableMode && secretMode !== publishableMode),
     },
+    paypal: {
+      clientIdConfigured: Boolean(paypalCreds.clientId),
+      clientSecretConfigured: Boolean(paypalCreds.clientSecret),
+      clientIdSource: paypalCreds.clientIdSource,
+      clientSecretSource: paypalCreds.clientSecretSource,
+      mode: paypalCreds.mode,
+    },
     sellingCurrency,
     storeCurrency,
     // Checkout is wired to Stripe (see /api/checkout/session and /api/webhooks/stripe); whether it
-    // can actually take money now depends only on the credentials above.
+    // can actually take money now depends only on the credentials above. PayPal credentials can be
+    // saved and are reported here, but checkout does not yet offer PayPal as a payment method —
+    // see packages/core/src/providers/adapters/paypal-payment.ts.
     checkoutImplemented: true,
   });
 }

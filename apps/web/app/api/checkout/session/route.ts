@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
   let client;
   try {
-    client = stripe();
+    client = await stripe();
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Payments are not configured." }, { status: 503 });
   }

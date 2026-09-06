@@ -9,6 +9,14 @@ export interface NavCategory {
   children?: { handle: string; name: string }[];
 }
 
+interface HeaderProps {
+  categories: NavCategory[];
+  /** The tenant's business name, set via the /onboarding setup wizard. Falls back to "Your Store". */
+  brandName: string;
+  /** The tenant's uploaded/generated logo, if the wizard's logo step was completed. */
+  logoUrl?: string | null;
+}
+
 const iconLinks = [
   { label: "Search", href: "/search" },
   { label: "Wishlist", href: "/account/wishlist" },
@@ -23,7 +31,7 @@ const iconLinks = [
  * Adult Toys -> Vibrators) renders as a dropdown on desktop and an expandable group on mobile,
  * rather than flattening the subcategory into the top-level list or dropping it entirely.
  */
-export default function Header({ categories }: { categories: NavCategory[] }) {
+export default function Header({ categories, brandName, logoUrl }: HeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null);
 
@@ -39,8 +47,13 @@ export default function Header({ categories }: { categories: NavCategory[] }) {
           Menu
         </button>
 
-        <Link href="/" className="relative z-10 shrink-0 flex items-center" aria-label="Beach Footprints home">
-          <span className="font-serif text-2xl tracking-wide text-ink-950">Beach Footprints</span>
+        <Link href="/" className="relative z-10 shrink-0 flex items-center" aria-label={`${brandName} home`}>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- tenant-supplied logo, arbitrary remote host
+            <img src={logoUrl} alt={brandName} className="h-9 w-auto object-contain" />
+          ) : (
+            <span className="font-serif text-2xl tracking-wide text-ink-950">{brandName}</span>
+          )}
         </Link>
 
         <nav className="hidden lg:flex items-center gap-7">

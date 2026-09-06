@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { stripe } from "@/lib/checkout/stripe";
+import { getStripeCredentials } from "@/lib/config/paymentCredentials";
 import { placeAliExpressOrder } from "@/lib/fulfillment/placeAliExpressOrder";
 import { getEmailProvider } from "@/lib/email/getEmailProvider";
 
@@ -15,7 +16,7 @@ export const runtime = "nodejs";
  * first would change the bytes the signature covers and every event would be rejected.
  */
 export async function POST(request: Request) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  const { webhookSecret: secret } = await getStripeCredentials();
   if (!secret) {
     console.error("[webhooks/stripe] STRIPE_WEBHOOK_SECRET is not set — refusing to process events");
     return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
   let event: Stripe.Event;
   try {
     const rawBody = await request.text();
-    event = stripe().webhooks.constructEvent(rawBody, signature, secret);
+    event = (await stripe()).webhooks.constructEvent(rawBody, signature, secret);
   } catch (error) {
     // An invalid signature is the expected shape of an attack, so it is a 400, not a 500.
     console.error(`[webhooks/stripe] signature verification failed: ${error instanceof Error ? error.message : error}`);

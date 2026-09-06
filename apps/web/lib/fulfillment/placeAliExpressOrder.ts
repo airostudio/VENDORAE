@@ -12,7 +12,7 @@ export interface PlaceOrderOutcome {
 /**
  * Places the AliExpress dropshipping order for a paid local order, via the dropship-engine.
  * Idempotency is the engine's job (an atomic claim on its own orders table, keyed by this store's
- * order id) — this just forwards the request and mirrors the result into Beach Footprints' own
+ * order id) — this just forwards the request and mirrors the result into this store's own
  * `orders` row. Shared by the admin manual-trigger route and the auto-place-on-payment webhook path
  * so there is exactly one implementation of "what it means to place this order".
  */

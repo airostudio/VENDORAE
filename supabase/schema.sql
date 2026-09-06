@@ -1,5 +1,5 @@
 -- ============================================================
--- Beach Footprints — Supabase Schema
+-- Vendorae — Supabase Schema
 -- Run in the Supabase SQL Editor (Dashboard → SQL Editor), or:
 --   supabase db execute -f supabase/schema.sql
 --
@@ -89,7 +89,25 @@ create table tenant_settings (
   shipping_flat_rate_cents      int not null default 995,
   free_shipping_threshold_cents int not null default 10000,
   tax_rate_percent              numeric(5,2) not null default 0
-    check (tax_rate_percent >= 0 and tax_rate_percent <= 100)
+    check (tax_rate_percent >= 0 and tax_rate_percent <= 100),
+
+  -- Setup wizard (see apps/web/app/onboarding) — collected once from a new owner before the
+  -- storefront is shown to any customer. onboarding_completed gates apps/web/middleware.ts's
+  -- redirect of every storefront route to /onboarding; it never gates /admin so the owner can
+  -- always sign in. The stripe_*/paypal_* columns are a fallback path only: an operator-level
+  -- deployment that sets STRIPE_SECRET_KEY etc. as env vars keeps using those (see
+  -- apps/web/lib/config/paymentCredentials.ts) — these columns exist so a self-serve owner who
+  -- has no access to the deployment's env vars can still enter their own keys from the wizard.
+  business_description text,
+  product_niche         text,
+  onboarding_completed  boolean not null default false,
+  stripe_secret_key       text,
+  stripe_publishable_key  text,
+  stripe_webhook_secret   text,
+  paypal_client_id        text,
+  paypal_client_secret    text,
+  paypal_mode              text not null default 'sandbox'
+    check (paypal_mode in ('sandbox', 'live'))
 );
 
 create table tax_settings (

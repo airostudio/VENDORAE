@@ -1,24 +1,34 @@
 import "server-only";
 import Stripe from "stripe";
+import { getStripeCredentials } from "@/lib/config/paymentCredentials";
 
-let cached: Stripe | null = null;
+let cachedKey: string | null = null;
+let cachedClient: Stripe | null = null;
 
 /**
  * The Stripe client, constructed lazily so a deployment without keys still builds and serves every
  * page that doesn't take payments — only the checkout routes fail, with a message that says why.
+ *
+ * The secret key comes from getStripeCredentials(), which prefers this deployment's own
+ * STRIPE_SECRET_KEY env var and falls back to whatever the /onboarding wizard saved for the
+ * current tenant — so a self-serve owner's own keys work without an operator setting env vars for
+ * them. The client is cached by key value (not just once) so a wizard save that changes the key
+ * takes effect on the next call instead of being stuck on a stale client from before the save.
  */
-export function stripe(): Stripe {
-  if (cached) return cached;
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) {
-    throw new Error("Payments are not configured: STRIPE_SECRET_KEY is not set on this deployment.");
+export async function stripe(): Promise<Stripe> {
+  const { secretKey } = await getStripeCredentials();
+  if (!secretKey) {
+    throw new Error("Payments are not configured: set STRIPE_SECRET_KEY, or complete the Stripe step of the setup wizard.");
   }
-  cached = new Stripe(key, { apiVersion: "2024-06-20" });
-  return cached;
+  if (cachedClient && cachedKey === secretKey) return cachedClient;
+  cachedClient = new Stripe(secretKey, { apiVersion: "2024-06-20" });
+  cachedKey = secretKey;
+  return cachedClient;
 }
 
-export function isStripeConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY);
+export async function isStripeConfigured(): Promise<boolean> {
+  const { secretKey } = await getStripeCredentials();
+  return Boolean(secretKey);
 }
 
 /** Absolute base URL for Stripe's return redirects — Stripe rejects relative ones. */

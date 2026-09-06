@@ -4,26 +4,59 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import CheckoutSettingsCard from "@/components/admin/CheckoutSettingsCard";
 
+type CredentialSource = "env" | "database" | null;
+
 interface PaymentsStatus {
   stripe: {
     secretKeyConfigured: boolean;
     publishableKeyConfigured: boolean;
     webhookSecretConfigured: boolean;
+    secretKeySource?: CredentialSource;
+    publishableKeySource?: CredentialSource;
+    webhookSecretSource?: CredentialSource;
     mode: "live" | "test" | null;
     modeMismatch: boolean;
+  };
+  paypal?: {
+    clientIdConfigured: boolean;
+    clientSecretConfigured: boolean;
+    clientIdSource: CredentialSource;
+    clientSecretSource: CredentialSource;
+    mode: "sandbox" | "live";
   };
   sellingCurrency: string | null;
   storeCurrency: string | null;
   checkoutImplemented: boolean;
 }
 
-function StatusRow({ label, ok, envVar, detail }: { label: string; ok: boolean; envVar: string; detail: string }) {
+function sourceLabel(source: CredentialSource | undefined, ok: boolean): string {
+  if (!ok) return "";
+  return source === "database" ? " — from the setup wizard" : " — from this deployment's environment";
+}
+
+function StatusRow({
+  label,
+  ok,
+  envVar,
+  detail,
+  source,
+}: {
+  label: string;
+  ok: boolean;
+  envVar: string;
+  detail: string;
+  source?: CredentialSource;
+}) {
   return (
     <div className="flex items-start gap-3 py-3 border-b border-stone-100 last:border-0">
       <span className={`text-sm mt-0.5 ${ok ? "text-green-700" : "text-red-600"}`}>{ok ? "✓" : "✕"}</span>
       <div className="flex-1 min-w-0">
         <p className="text-sm">
-          {label} <span className={ok ? "text-green-700" : "text-red-600"}>{ok ? "configured" : "not set"}</span>
+          {label}{" "}
+          <span className={ok ? "text-green-700" : "text-red-600"}>
+            {ok ? "configured" : "not set"}
+            {sourceLabel(source, ok)}
+          </span>
         </p>
         <p className="text-xs text-stone-500 mt-0.5">
           <code className="bg-stone-100 px-1">{envVar}</code> — {detail}
@@ -102,9 +135,14 @@ export default function PaymentsSettingsPage() {
       <p className="eyebrow mb-2">Payments</p>
       <h1 className="font-serif text-3xl mb-2">Stripe</h1>
       <p className="text-sm text-stone-600 mb-8">
-        Stripe credentials are read from this deployment&rsquo;s environment variables, not stored in the database — a
-        secret key in a table is one careless query away from leaking, and rotating it should be a deploy setting. This
-        screen reports what is configured; set the values in Vercel → Settings → Environment Variables.
+        Credentials are read from this deployment&rsquo;s environment variables first — a secret key in a table is one
+        careless query away from leaking, and rotating it should be a deploy setting — and fall back to whatever was
+        saved in the{" "}
+        <Link href="/onboarding" className="underline">
+          setup wizard
+        </Link>{" "}
+        for an owner without access to Vercel&rsquo;s environment variables. This screen reports what is configured
+        and where each value came from.
       </p>
 
       {!allSet ? (
@@ -144,18 +182,21 @@ export default function PaymentsSettingsPage() {
         <StatusRow
           label="Secret key"
           ok={status.stripe.secretKeyConfigured}
+          source={status.stripe.secretKeySource}
           envVar="STRIPE_SECRET_KEY"
-          detail="server-side key used to create charges. Never expose this to the browser."
+          detail="server-side key used to create charges. Never exposed to the browser."
         />
         <StatusRow
           label="Publishable key"
           ok={status.stripe.publishableKeyConfigured}
+          source={status.stripe.publishableKeySource}
           envVar="NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
           detail="safe to send to the browser; used by Stripe's card fields."
         />
         <StatusRow
           label="Webhook signing secret"
           ok={status.stripe.webhookSecretConfigured}
+          source={status.stripe.webhookSecretSource}
           envVar="STRIPE_WEBHOOK_SECRET"
           detail="verifies Stripe's callbacks so an order is only marked paid on a genuine event."
         />
@@ -227,6 +268,39 @@ export default function PaymentsSettingsPage() {
           </p>
         )}
       </section>
+
+      {status.paypal && (
+        <section className="card p-6 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-serif text-xl">PayPal</h2>
+            <span
+              className={`text-xs px-2 py-1 ${status.paypal.mode === "live" ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-600"}`}
+            >
+              {status.paypal.mode === "live" ? "Live mode" : "Sandbox mode"}
+            </span>
+          </div>
+          <p className="text-xs text-stone-500 mb-2">
+            PayPal credentials can be saved here or via the setup wizard. Checkout does not yet offer &ldquo;Pay with
+            PayPal&rdquo; as a button — the adapter exists (
+            <code className="bg-stone-100 px-1">packages/core/src/providers/adapters/paypal-payment.ts</code>) and can
+            create/capture orders, but it isn&rsquo;t wired into the checkout page yet.
+          </p>
+          <StatusRow
+            label="Client ID"
+            ok={status.paypal.clientIdConfigured}
+            source={status.paypal.clientIdSource}
+            envVar="PAYPAL_CLIENT_ID"
+            detail="identifies your PayPal app."
+          />
+          <StatusRow
+            label="Client secret"
+            ok={status.paypal.clientSecretConfigured}
+            source={status.paypal.clientSecretSource}
+            envVar="PAYPAL_CLIENT_SECRET"
+            detail="server-side secret used to create/capture orders. Never exposed to the browser."
+          />
+        </section>
+      )}
 
       <CheckoutSettingsCard />
     </div>
