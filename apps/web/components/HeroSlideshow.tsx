@@ -3,13 +3,18 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
-// Real lookbook photography lives in public/hero/ (see public/hero/README.md).
-// Add more slides here as more photos come in.
-const SLIDES = [
-  { src: "/hero/beach-hero1.jpg", alt: "Woman in a white boho maxi dress walking along the shoreline at golden hour" },
-  { src: "/hero/beach-hero2.jpg", alt: "White lace maxi dress hanging on a rattan peacock chair at the water's edge" },
-  { src: "/hero/beach-hero3.jpg", alt: "Woman in a floral boho maxi dress sitting in a rattan peacock chair on the shoreline" },
-];
+export interface HeroSlide {
+  src: string;
+  alt: string;
+}
+
+// Shown only if the tenant somehow has zero hero banner rows and their image URLs are all
+// missing — should be unreachable once supabase/seed.sql's placeholder rows exist, but this is
+// the last-resort fallback so the section never renders blank or throws.
+const FALLBACK_SLIDE: HeroSlide = {
+  src: "https://placehold.co/1600x900/1a1a1a/ffffff?text=Your+Store+Banner",
+  alt: "Placeholder store banner",
+};
 
 const HOLD_MS = 6000;
 const FADE_MS = 2000;
@@ -24,16 +29,19 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 /**
- * Crossfading hero slideshow. Order is randomized per page load (client-side
- * only, so the server-rendered first paint stays deterministic and hydration
- * doesn't warn) — the slide list itself is fixed, just its order isn't.
+ * Crossfading hero slideshow. Slides come from the database (see lib/data/cms.ts) via the parent
+ * server component — this component just animates whatever list it's given. Order is randomized
+ * per page load (client-side only, so the server-rendered first paint stays deterministic and
+ * hydration doesn't warn) — the slide list itself is fixed, just its order isn't.
  */
-export default function HeroSlideshow() {
-  const [order, setOrder] = useState(SLIDES);
+export default function HeroSlideshow({ slides }: { slides: HeroSlide[] }) {
+  const baseSlides = slides.length > 0 ? slides : [FALLBACK_SLIDE];
+  const [order, setOrder] = useState(baseSlides);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
-    setOrder(shuffle(SLIDES));
+    setOrder(shuffle(baseSlides));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

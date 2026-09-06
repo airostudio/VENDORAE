@@ -5,7 +5,7 @@ import HeroSlideshow from "@/components/HeroSlideshow";
 import ProductCard from "@/components/ProductCard";
 import { getFeatureCategories } from "@/lib/data/categories";
 import { getProductsByCategory } from "@/lib/data/products";
-import { getHeroBanner } from "@/lib/data/cms";
+import { getHeroBanners } from "@/lib/data/cms";
 import { getTenantBranding } from "@/lib/tenantSettings";
 
 export const dynamic = "force-dynamic";
@@ -13,19 +13,24 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   // Built from the database, not a fixed handle list, so a category added in admin — or one that
   // just got its first product — appears here without a code change.
-  const [featureCategories, newArrivals, bestSellers, heroBanner, branding] = await Promise.all([
+  const [featureCategories, newArrivals, bestSellers, heroBanners, branding] = await Promise.all([
     getFeatureCategories(),
     getProductsByCategory("new-arrivals"),
     getProductsByCategory("best-sellers"),
-    getHeroBanner(),
+    getHeroBanners(),
     getTenantBranding(),
   ]);
   const { brandName } = branding;
+  // The slideshow crossfades through every active homepage_hero banner's image; the headline/body/
+  // CTA text shown over it comes from just the first one (by position) — one hero can only carry
+  // one message at a time, so additional banners contribute imagery, not more copy.
+  const heroBanner = heroBanners[0];
+  const heroSlides = heroBanners.filter((b) => b.imageUrl).map((b) => ({ src: b.imageUrl!, alt: b.headline }));
 
   return (
     <div>
       <section className="relative h-[85vh] min-h-[560px] flex items-end overflow-hidden">
-        <HeroSlideshow />
+        <HeroSlideshow slides={heroSlides} />
         <div className="absolute inset-0 bg-gradient-to-t from-ink-950/90 via-ink-950/20 to-transparent" />
         <div className="container-page relative pb-16 sm:pb-24 text-warm-50">
           <p className="eyebrow text-stone-300 mb-4">{brandName}</p>
@@ -71,10 +76,11 @@ export default async function HomePage() {
       <section className="bg-ink-950 text-warm-50 py-24">
         <div className="container-page grid lg:grid-cols-2 gap-12 items-center">
           <div>
-            <p className="eyebrow text-stone-400 mb-4">The Journal</p>
-            <h2 className="font-serif text-4xl mb-6 leading-tight">Slow mornings, sun-warmed fabric, salt in the air.</h2>
+            <p className="eyebrow text-stone-400 mb-4">Guides &amp; Updates</p>
+            <h2 className="font-serif text-4xl mb-6 leading-tight">Placeholder heading — replace with your own.</h2>
             <p className="text-stone-300 leading-relaxed mb-8 max-w-md">
-              Style guides, care tips and product stories — read the latest from the {brandName} journal.
+              This is placeholder copy. Add buying guides, care tips and product stories here to share the latest from{" "}
+              {brandName}.
             </p>
             <Link href="/guides" className="btn-primary bg-warm-50 text-ink-950 hover:bg-stone-200">
               Read the Guides
@@ -101,16 +107,16 @@ export default async function HomePage() {
       <section className="border-t border-stone-200 py-16">
         <div className="container-page grid sm:grid-cols-3 gap-10 text-center">
           <div>
-            <p className="eyebrow mb-2">Woven by Hand</p>
-            <p className="text-sm text-stone-500">Natural fibres and hand-dyed pieces across the catalogue.</p>
+            <p className="eyebrow mb-2">Quality You Can Trust</p>
+            <p className="text-sm text-stone-500">Every product is checked against our quality standards before it ships.</p>
           </div>
           <div>
-            <p className="eyebrow mb-2">Made to Wander</p>
-            <p className="text-sm text-stone-500">Built for sand, salt air and long days outdoors.</p>
+            <p className="eyebrow mb-2">Fast, Reliable Shipping</p>
+            <p className="text-sm text-stone-500">Orders are packed and shipped quickly, with tracking every step of the way.</p>
           </div>
           <div>
             <p className="eyebrow mb-2">Easy Returns</p>
-            <p className="text-sm text-stone-500">Simple, no-hassle returns on unworn pieces.</p>
+            <p className="text-sm text-stone-500">Simple, no-hassle returns if something isn&rsquo;t right.</p>
           </div>
         </div>
       </section>

@@ -8,7 +8,8 @@ insert into storage.buckets (id, name, public)
 values
   ('imports', 'imports', false),
   ('product-images', 'product-images', true),
-  ('branding', 'branding', true)
+  ('branding', 'branding', true),
+  ('banners', 'banners', true)
 on conflict (id) do nothing;
 
 -- Objects are stored at "<tenant_id>/<import_job_id>/<filename>.csv" — the
@@ -37,3 +38,12 @@ create policy "anyone can view branding assets" on storage.objects for select
 create policy "tenant members manage their branding assets" on storage.objects for all
   using (bucket_id = 'branding' and is_tenant_member((storage.foldername(name))[1]::uuid))
   with check (bucket_id = 'branding' and is_tenant_member((storage.foldername(name))[1]::uuid));
+
+-- CMS banner imagery (homepage hero slideshow, promo strips) uploaded from Admin → CMS & Banners.
+-- Public read so the storefront can render it without auth; write is gated to tenant staff. Same
+-- "<tenant_id>/<filename>" leading-segment convention as the other buckets.
+create policy "anyone can view banner images" on storage.objects for select
+  using (bucket_id = 'banners');
+create policy "tenant members manage their banner images" on storage.objects for all
+  using (bucket_id = 'banners' and is_tenant_member((storage.foldername(name))[1]::uuid))
+  with check (bucket_id = 'banners' and is_tenant_member((storage.foldername(name))[1]::uuid));
